@@ -1,4 +1,4 @@
-# Analyst Intern Project
+# NBA Shot Outcome Prediction
 
 Welcome to the next phase of the hiring process: a technical project. Please read `Analyst Intern Project Brief.pdf` for instructions.
 
