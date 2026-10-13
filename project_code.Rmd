@@ -1,0 +1,1173 @@
+---
+title: "project_code"
+author: "James Petropulos | 8601"
+date: "2026-09-18"
+output: html_document
+---
+
+## Load Packages ----------------------------------------------------------------------------------------------------
+
+```{r library}
+library(tidyverse)
+```
+
+
+## Load Data --------------------------------------------------------------------------------------------------------
+```{r Read Data}
+  train_df <- read_csv("training.csv.gz")
+  test_df <- read_csv("testing.csv.gz")
+```
+
+## Exploratory Data Analysis ----------------------------------------------------------------------------------------
+
+```{r train_df}
+head(train_df)
+dim(train_df)
+names(train_df)
+```
+
+# Approximately 54% of shots taken are misses and 46% of shots are made.
+```{r Shot Outcome}
+table(train_df$outcome)
+prop.table(table(train_df$outcome))
+```
+# Break groups by distance
+```{r distance_df}
+distance_df <- train_df |> 
+  mutate(distance_group = cut(
+    distance,
+    breaks = c(0, 5, 10, 15, 20, 25, 30, Inf),
+    right = FALSE
+    )
+  )
+```
+
+
+# Distance group shot outcomes
+```{r}
+distance_df |>
+  group_by(distance_group) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome)
+  ) 
+```
+
+# Creating Groups
+```{r}
+distance_summary <- train_df |>
+  mutate(
+    distance_group = cut(
+      distance,
+      breaks = c(0, 5, 10, 15, 20, 25, 30, Inf),
+      labels = c(
+        "0-5 ft",
+        "5-10 ft",
+        "10-15 ft",
+        "15-20 ft",
+        "20-25 ft",
+        "25-30 ft",
+        "30+ ft"
+      ),
+      include.lowest = TRUE
+    )
+  ) |>
+  group_by(distance_group) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  )
+```
+
+```{r Distance shot rate visual}
+ggplot(
+  distance_summary,
+  aes(x = distance_group, y = make_rate, group = 1)
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    title = "Shot Make Rate by Distance",
+    x = "Distance from basket",
+    y = "Make rate"
+  ) +
+  theme_minimal()
+```
+
+
+
+#  Two-point attempts have a higher observed make rate than three-point attempts.
+```{r Compare 2/3 Pointers}
+train_df |>
+  group_by(three) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome)
+  )
+```
+
+# 44% of contested shots still make
+
+```{r Contested shots matter?}
+train_df |>
+  group_by(contested) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome)
+  )
+```
+
+```{r Shot Type}
+shot_type_df <- train_df |>
+  select(shottype, outcome)
+```
+
+```{r}
+shot_type_summary <- shot_type_df |>
+  group_by(shottype) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  )
+```
+
+# Dunk shot type has the highest make rate
+
+```{r}
+shot_type_summary
+```
+
+```{r}
+shottype_summary <- train_df |>
+  group_by(shottype) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  ) |>
+  arrange(make_rate)
+```
+
+```{r Shot Make Rate Bar Plot}
+ggplot(
+  shottype_summary,
+  aes(x = reorder(shottype, make_rate), y = make_rate)
+) +
+  geom_col() +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    title = "Shot Make Rate by Shot Type",
+    x = "Shot type",
+    y = "Make rate"
+  ) +
+  coord_flip() +
+  theme_minimal()
+```
+
+## Feature Engineering ----------------------------------------------------------------------------------------------
+
+```{r Defender Distance}
+train_df |>
+  summarise(
+    min_defdist = min(closestdefdist, na.rm = TRUE),
+    median_defdist = median(closestdefdist, na.rm = TRUE),
+    mean_defdist = mean(closestdefdist, na.rm = TRUE),
+    max_defdist = max(closestdefdist, na.rm = TRUE)
+  )
+```
+
+```{r}
+train_df |>
+  mutate(
+    defdist_group = cut(
+      closestdefdist,
+      breaks = c(0, 2, 4, 6, 8, 10, Inf),
+      labels = c("0-2", "2-4", "4-6", "6-8", "8-10", "10+")
+    )
+  ) |>
+  group_by(defdist_group) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome)
+  )
+```
+
+```{r}
+defender_summary <- train_df |>
+  mutate(
+    defdist_group = cut(
+      closestdefdist,
+      breaks = c(0, 2, 4, 6, 8, 10, Inf),
+      labels = c(
+        "0-2 ft",
+        "2-4 ft",
+        "4-6 ft",
+        "6-8 ft",
+        "8-10 ft",
+        "10+ ft"
+      ),
+      include.lowest = TRUE
+    )
+  ) |>
+  group_by(defdist_group) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  )
+```
+
+```{r Closest Defender Graph}
+ggplot(
+  defender_summary,
+  aes(x = defdist_group, y = make_rate, group = 1)
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    title = "Shot Make Rate by Closest Defender Distance",
+    x = "Closest defender distance",
+    y = "Make rate"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r Shot Location}
+train_df |>
+  summarise(
+    min_x = min(locationx, na.rm = TRUE),
+    max_x = max(locationx, na.rm = TRUE),
+    min_y = min(locationy, na.rm = TRUE),
+    max_y = max(locationy, na.rm = TRUE)
+  )
+```
+
+```{r Shot Location Graph}
+ggplot(
+  train_df,
+  aes(x = locationx, y = locationy, alpha = 0.15)
+) +
+  geom_point() +
+  labs(
+    title = "NBA Shot Locations",
+    x = "Court location X",
+    y = "Court location Y"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(
+  train_df,
+  aes(x = locationx, y = locationy)
+) +
+  stat_summary_2d(
+    aes(z = outcome),
+    bins = 30,
+    fun = mean
+  ) +
+  labs(
+    title = "Shot Make Rate by Court Location",
+    x = "Court location X",
+    y = "Court location Y",
+    fill = "Make rate"
+  ) +
+  theme_minimal()
+```
+
+
+```{r Game State}
+train_df |>
+  group_by(gamestate) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome)
+  ) |>
+  arrange(desc(make_rate))
+```
+
+## Train / Validation Split -----------------------------------------------------------------------------------------
+
+```{r Training Model}
+train_model <- train_df |>
+  mutate(
+    three = as.factor(three),
+    shottype = as.factor(shottype),
+    gamestate = as.factor(gamestate)
+  )
+```
+
+
+```{r Validation Set}
+set.seed(123)
+
+train_indices <- sample(
+  seq_len(nrow(train_model)),
+  size = 0.8 * nrow(train_model)
+)
+
+model_train <- train_model[train_indices, ]
+model_valid <- train_model[-train_indices, ]
+```
+
+```{r Logistic Regression}
+baseline_model <- glm(
+  outcome ~
+    distance +
+    three +
+    shottype +
+    closestdefdist +
+    gamestate +
+    shotclock +
+    dribblesbefore +
+    shooterspeed +
+    locationx +
+    locationy,
+  data = model_train,
+  family = binomial()
+)
+```
+
+```{r}
+valid_predictions <- predict(
+  baseline_model,
+  newdata = model_valid,
+  type = "response"
+)
+```
+
+# Baseline logistic regression = 0.6447523
+
+```{r Baseline Score}
+epsilon <- 1e-15
+
+valid_predictions <- pmin(
+  pmax(valid_predictions, epsilon),
+  1 - epsilon
+)
+
+log_loss <- -mean(
+  model_valid$outcome * log(valid_predictions) +
+    (1 - model_valid$outcome) * log(1 - valid_predictions)
+)
+
+log_loss
+```
+
+## Improved Logistic Regression -------------------------------------------------------------------------------------
+
+```{r Improved Model with polynomials}
+improved_model <- glm(
+  outcome ~
+    poly(distance, 2) +
+    three +
+    shottype +
+    poly(closestdefdist, 2) +
+    gamestate +
+    poly(shotclock, 2) +
+    dribblesbefore +
+    shooterspeed +
+    poly(locationx, 2) +
+    poly(locationy, 2),
+  data = model_train,
+  family = binomial()
+)
+
+```
+
+# Nonlinear Model did improve validation performance
+
+```{r}
+improved_predictions <- predict(
+  improved_model,
+  newdata = model_valid,
+  type = "response"
+)
+
+improved_predictions <- pmin(
+  pmax(improved_predictions, epsilon),
+  1 - epsilon
+)
+
+improved_log_loss <- -mean(
+  model_valid$outcome * log(improved_predictions) +
+    (1 - model_valid$outcome) * log(1 - improved_predictions)
+)
+
+improved_log_loss
+```
+```{r Contested Information}
+table(train_df$contested)
+
+table(train_df$num_contesters)
+
+train_df |>
+  group_by(contested) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  )
+```
+
+```{r}
+train_df |>
+  group_by(num_contesters) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  )
+```
+
+```{r Improved Model 2}
+improved_model_2 <- glm(
+  outcome ~
+    poly(distance, 2) +
+    three +
+    shottype +
+    poly(closestdefdist, 2) +
+    gamestate +
+    poly(shotclock, 2) +
+    dribblesbefore +
+    shooterspeed +
+    poly(locationx, 2) +
+    poly(locationy, 2) +
+    as.factor(num_contesters),
+  data = model_train,
+  family = binomial()
+)
+```
+
+
+# Nonlinear logistic regression + num_contesters = 0.6403277
+
+```{r}
+improved_predictions_2 <- predict(
+  improved_model_2,
+  newdata = model_valid,
+  type = "response"
+)
+
+improved_predictions_2 <- pmin(
+  pmax(improved_predictions_2, epsilon),
+  1 - epsilon
+)
+
+improved_log_loss_2 <- -mean(
+  model_valid$outcome * log(improved_predictions_2) +
+    (1 - model_valid$outcome) * log(1 - improved_predictions_2)
+)
+
+improved_log_loss_2
+```
+
+```{r}
+train_model <- train_model |>
+  mutate(
+    defdist_1sec = as.numeric(str_split(
+      str_remove_all(closestdefapproach, "[{}]"),
+      ","
+    ) |> sapply(`[`, 1)),
+
+    defdist_075sec = as.numeric(str_split(
+      str_remove_all(closestdefapproach, "[{}]"),
+      ","
+    ) |> sapply(`[`, 2)),
+
+    defdist_05sec = as.numeric(str_split(
+      str_remove_all(closestdefapproach, "[{}]"),
+      ","
+    ) |> sapply(`[`, 3)),
+
+    defdist_025sec = as.numeric(str_split(
+      str_remove_all(closestdefapproach, "[{}]"),
+      ","
+    ) |> sapply(`[`, 4))
+  )
+```
+
+```{r Defender Approaching Distances}
+train_model |>
+  select(
+    closestdefapproach,
+    defdist_1sec,
+    defdist_075sec,
+    defdist_05sec,
+    defdist_025sec
+  ) |>
+  head(10)
+```
+
+```{r}
+train_model <- train_model |>
+  mutate(
+    defender_approach = defdist_025sec - defdist_1sec
+  )
+```
+
+# TRUE indicates that the defender moved closer as the shot was taken.
+
+```{r}
+train_model |>
+  group_by(
+    defender_approach < 0
+  ) |>
+  summarise(
+    shots = n(),
+    make_rate = mean(outcome),
+    .groups = "drop"
+  )
+```
+
+```{r}
+set.seed(123)
+
+train_indices <- sample(
+  seq_len(nrow(train_model)),
+  size = 0.8 * nrow(train_model)
+)
+
+model_train <- train_model[train_indices, ]
+model_valid <- train_model[-train_indices, ]
+```
+
+
+```{r Improved Model 3}
+improved_model_3 <- glm(
+  outcome ~
+    poly(distance, 2) +
+    three +
+    shottype +
+    poly(closestdefdist, 2) +
+    gamestate +
+    poly(shotclock, 2) +
+    dribblesbefore +
+    shooterspeed +
+    poly(locationx, 2) +
+    poly(locationy, 2) +
+    as.factor(num_contesters) +
+    defender_approach,
+  data = model_train,
+  family = binomial()
+)
+```
+
+# Adding defender_approach produced almost no additional improvement
+# Validation log-loss ≈ 0.6403272
+
+```{r Improved Predictions 3}
+improved_predictions_3 <- predict(
+  improved_model_3,
+  newdata = model_valid,
+  type = "response"
+)
+
+improved_predictions_3 <- pmin(
+  pmax(improved_predictions_3, epsilon),
+  1 - epsilon
+)
+
+improved_log_loss_3 <- -mean(
+  model_valid$outcome * log(improved_predictions_3) +
+    (1 - model_valid$outcome) * log(1 - improved_predictions_3)
+)
+
+improved_log_loss_3
+```
+
+
+## XGBoost Model Development ----------------------------------------------------------------------------------------
+
+```{r XGBoost}
+library(xgboost)
+library(dplyr)
+```
+
+```{r Feature List Update}
+xgb_features <- c(
+  "distance",
+  "three",
+  "shottype",
+  "closestdefdist",
+  "gamestate",
+  "shotclock",
+  "dribblesbefore",
+  "shooterspeed",
+  "locationx",
+  "locationy",
+  "num_contesters"
+)
+```
+
+```{r Converting data}
+xgb_train_df <- model_train |>
+  select(outcome, all_of(xgb_features))
+
+xgb_valid_df <- model_valid |>
+  select(outcome, all_of(xgb_features))
+```
+
+```{r Matrix Creation}
+x_train <- model.matrix(
+  outcome ~ . - 1,
+  data = xgb_train_df
+)
+
+x_valid <- model.matrix(
+  outcome ~ . - 1,
+  data = xgb_valid_df
+)
+```
+
+```{r XGBoost Data Object Creation}
+dtrain <- xgb.DMatrix(
+  data = x_train,
+  label = xgb_train_df$outcome
+)
+
+dvalid <- xgb.DMatrix(
+  data = x_valid,
+  label = xgb_valid_df$outcome
+)
+```
+
+```{r Train first XGBoost Model}
+set.seed(123)
+
+xgb_model <- xgb.train(
+  params = list(
+    objective = "binary:logistic",
+    eval_metric = "logloss",
+    eta = 0.05,
+    max_depth = 5,
+    min_child_weight = 10,
+    subsample = 0.8,
+    colsample_bytree = 0.8
+  ),
+  data = dtrain,
+  nrounds = 300,
+  watchlist = list(
+    train = dtrain,
+    validation = dvalid
+  ),
+  verbose = 1
+)
+```
+
+```{r Calculating log-loss}
+xgb_predictions <- predict(
+  xgb_model,
+  dvalid
+)
+```
+
+```{r}
+xgb_predictions <- pmin(
+  pmax(xgb_predictions, epsilon),
+  1 - epsilon
+)
+
+xgb_log_loss <- -mean(
+  model_valid$outcome * log(xgb_predictions) +
+    (1 - model_valid$outcome) * log(1 - xgb_predictions)
+)
+
+xgb_log_loss
+```
+
+# # Initial XGBoost validation log-loss = 0.6278
+
+```{r}
+evaluation_log <- attr(xgb_model, "evaluation_log")
+
+best_row <- which.min(evaluation_log$validation_logloss)
+
+best_iteration <- evaluation_log$iter[best_row]
+best_score <- evaluation_log$validation_logloss[best_row]
+
+best_iteration
+best_score
+```
+
+```{r}
+importance_matrix <- xgb.importance(
+  model = xgb_model
+)
+
+importance_matrix
+
+xgb.plot.importance(
+  importance_matrix,
+  top_n = 15
+)
+```
+
+```{r}
+depth_results <- data.frame(
+  max_depth = numeric(),
+  best_iteration = numeric(),
+  logloss = numeric()
+)
+
+set.seed(123)
+
+for (depth in c(3, 4, 5, 6)) {
+
+  model_temp <- xgb.train(
+    params = list(
+      objective = "binary:logistic",
+      eval_metric = "logloss",
+      eta = 0.05,
+      max_depth = depth,
+      min_child_weight = 10,
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    ),
+    data = dtrain,
+    nrounds = 600,
+    watchlist = list(
+      train = dtrain,
+      validation = dvalid
+    ),
+    early_stopping_rounds = 30,
+    verbose = 0
+  )
+
+  eval_log <- attr(model_temp, "evaluation_log")
+
+  best_row <- which.min(eval_log$validation_logloss)
+
+  depth_results <- rbind(
+    depth_results,
+    data.frame(
+      max_depth = depth,
+      best_iteration = eval_log$iter[best_row],
+      logloss = eval_log$validation_logloss[best_row]
+    )
+  )
+}
+
+depth_results
+```
+
+```{r Checking for defensive features}
+train_model |>
+  select(
+    contested,
+    num_contesters,
+    closestdefdist,
+    distcont1,
+    distcont2,
+    distcont3,
+    distcont4
+  ) |>
+  head(15)
+
+train_model |>
+  summarise(
+    across(
+      c(
+        contested,
+        distcont1,
+        distcont2,
+        distcont3,
+        distcont4
+      ),
+      ~ sum(is.na(.))
+    )
+  )
+table(train_model$contested, useNA = "ifany")
+```
+
+```{r XGB Expanded}
+xgb_features_expanded <- c(
+  "distance",
+  "three",
+  "shottype",
+  "closestdefdist",
+  "gamestate",
+  "shotclock",
+  "dribblesbefore",
+  "shooterspeed",
+  "locationx",
+  "locationy",
+  "num_contesters",
+  "distcont1",
+  "distcont2",
+  "distcont3"
+)
+```
+
+```{r Matrices from original features}
+x_train_expanded <- model.matrix(
+  ~ distance +
+    three +
+    shottype +
+    closestdefdist +
+    gamestate +
+    shotclock +
+    dribblesbefore +
+    shooterspeed +
+    locationx +
+    locationy +
+    num_contesters - 1,
+  data = model_train
+)
+
+x_valid_expanded <- model.matrix(
+  ~ distance +
+    three +
+    shottype +
+    closestdefdist +
+    gamestate +
+    shotclock +
+    dribblesbefore +
+    shooterspeed +
+    locationx +
+    locationy +
+    num_contesters - 1,
+  data = model_valid
+)
+```
+
+```{r Manually attaching three numeric defender columns}
+x_train_expanded <- cbind(
+  x_train_expanded,
+  distcont1 = model_train$distcont1,
+  distcont2 = model_train$distcont2,
+  distcont3 = model_train$distcont3
+)
+
+x_valid_expanded <- cbind(
+  x_valid_expanded,
+  distcont1 = model_valid$distcont1,
+  distcont2 = model_valid$distcont2,
+  distcont3 = model_valid$distcont3
+)
+```
+
+
+```{r}
+dtrain_expanded <- xgb.DMatrix(
+  data = x_train_expanded,
+  label = model_train$outcome,
+  missing = NA
+)
+
+dvalid_expanded <- xgb.DMatrix(
+  data = x_valid_expanded,
+  label = model_valid$outcome,
+  missing = NA
+)
+```
+
+
+```{r}
+xgb_expanded <- xgb.train(
+  params = list(
+    objective = "binary:logistic",
+    eval_metric = "logloss",
+    eta = 0.05,
+    max_depth = 6,
+    min_child_weight = 10,
+    subsample = 0.8,
+    colsample_bytree = 0.8
+  ),
+  data = dtrain_expanded,
+  nrounds = 600,
+  watchlist = list(
+    train = dtrain_expanded,
+    validation = dvalid_expanded
+  ),
+  early_stopping_rounds = 30,
+  verbose = 0
+)
+```
+
+# Expanded defensive-feature model
+# Validation log-loss = 0.6271765
+
+```{r}
+expanded_log <- attr(
+  xgb_expanded,
+  "evaluation_log"
+)
+
+best_row <- which.min(
+  expanded_log$validation_logloss
+)
+
+expanded_best_iteration <- expanded_log$iter[best_row]
+
+expanded_best_score <- expanded_log$validation_logloss[best_row]
+
+expanded_best_iteration
+expanded_best_score
+```
+
+```{r}
+tuning_results <- data.frame(
+  eta = numeric(),
+  min_child_weight = numeric(),
+  best_iteration = numeric(),
+  logloss = numeric()
+)
+
+settings <- data.frame(
+  eta = c(0.03, 0.03, 0.05, 0.05),
+  min_child_weight = c(5, 10, 5, 10)
+)
+
+set.seed(123)
+
+for (i in 1:nrow(settings)) {
+
+  temp_model <- xgb.train(
+    params = list(
+      objective = "binary:logistic",
+      eval_metric = "logloss",
+      eta = settings$eta[i],
+      max_depth = 6,
+      min_child_weight = settings$min_child_weight[i],
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    ),
+    data = dtrain_expanded,
+    nrounds = 700,
+    watchlist = list(
+      train = dtrain_expanded,
+      validation = dvalid_expanded
+    ),
+    early_stopping_rounds = 30,
+    verbose = 0
+  )
+
+  eval_log <- attr(temp_model, "evaluation_log")
+
+  best_row <- which.min(
+    eval_log$validation_logloss
+  )
+
+  tuning_results <- rbind(
+    tuning_results,
+    data.frame(
+      eta = settings$eta[i],
+      min_child_weight = settings$min_child_weight[i],
+      best_iteration = eval_log$iter[best_row],
+      logloss = eval_log$validation_logloss[best_row]
+    )
+  )
+}
+
+tuning_results
+```
+```{r}
+dim(test_df)
+names(test_df)
+head(test_df$shot_id)
+```
+
+# Best tuning result:
+# eta = 0.03
+# min_child_weight = 10
+# best_iteration = 359
+# validation log-loss = 0.6269139
+
+# Building Final Training and Testing Matrices
+```{r}
+train_final <- train_df |>
+  mutate(
+    three = as.factor(three),
+    shottype = as.factor(shottype),
+    gamestate = as.factor(gamestate)
+  )
+
+test_final <- test_df |>
+  mutate(
+    three = factor(three, levels = levels(train_final$three)),
+    shottype = factor(shottype, levels = levels(train_final$shottype)),
+    gamestate = factor(gamestate, levels = levels(train_final$gamestate))
+  )
+```
+
+```{r}
+x_full <- model.matrix(
+  ~ distance +
+    three +
+    shottype +
+    closestdefdist +
+    gamestate +
+    shotclock +
+    dribblesbefore +
+    shooterspeed +
+    locationx +
+    locationy +
+    num_contesters - 1,
+  data = train_final
+)
+
+x_test <- model.matrix(
+  ~ distance +
+    three +
+    shottype +
+    closestdefdist +
+    gamestate +
+    shotclock +
+    dribblesbefore +
+    shooterspeed +
+    locationx +
+    locationy +
+    num_contesters - 1,
+  data = test_final
+)
+```
+
+```{r}
+x_full <- cbind(
+  x_full,
+  distcont1 = train_final$distcont1,
+  distcont2 = train_final$distcont2,
+  distcont3 = train_final$distcont3
+)
+
+x_test <- cbind(
+  x_test,
+  distcont1 = test_final$distcont1,
+  distcont2 = test_final$distcont2,
+  distcont3 = test_final$distcont3
+)
+```
+
+```{r}
+dim(x_full)
+dim(x_test)
+
+nrow(train_final)
+nrow(test_final)
+
+identical(
+  colnames(x_full),
+  colnames(x_test)
+)
+```
+
+```{r}
+dfull <- xgb.DMatrix(
+  data = x_full,
+  label = train_final$outcome,
+  missing = NA
+)
+
+dtest <- xgb.DMatrix(
+  data = x_test,
+  missing = NA
+)
+```
+
+```{r}
+
+set.seed(123)
+
+final_xgb_model <- xgb.train(
+  params = list(
+    objective = "binary:logistic",
+    eval_metric = "logloss",
+    eta = 0.03,
+    max_depth = 6,
+    min_child_weight = 10,
+    subsample = 0.8,
+    colsample_bytree = 0.8
+  ),
+  data = dfull,
+  nrounds = 359,
+  verbose = 0
+)
+```
+
+# Final Predictions
+```{r}
+final_predictions <- predict(
+  final_xgb_model,
+  dtest
+)
+```
+
+
+```{r}
+length(final_predictions)
+summary(final_predictions)
+
+any(is.na(final_predictions))
+any(final_predictions < 0)
+any(final_predictions > 1)
+```
+
+#Submission CSV Creation
+
+```{r}
+submission <- read_csv("submission.csv")
+```
+```{r}
+names(submission)
+dim(submission)
+head(submission)
+```
+
+```{r}
+submission$make_prob <- final_predictions
+```
+
+```{r}
+head(submission)
+
+summary(submission$make_prob)
+
+nrow(submission)
+
+sum(is.na(submission$make_prob))
+```
+
+```{r}
+write_csv(
+  submission,
+  "submission.csv"
+)
+```
+
+```{r}
+submission_check <- read_csv("submission.csv")
+
+dim(submission_check)
+names(submission_check)
+head(submission_check)
+tail(submission_check)
+```
+
+```{r}
+stopifnot(
+  nrow(submission_check) == 213977,
+  !any(is.na(submission_check$make_prob)),
+  all(submission_check$make_prob >= 0),
+  all(submission_check$make_prob <= 1)
+)
+```
+
+
+
+
+
+
+

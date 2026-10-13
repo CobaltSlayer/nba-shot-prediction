@@ -1,0 +1,10 @@
+.RData
+.RDataTmp*
+.Rhistory
+.Rproj.user/
+training.csv.gz
+testing.csv.gz
+.Rhistory
+.RData
+.Rproj.user/
+submission.csv
