@@ -13,6 +13,12 @@ hyperparameter tuning, and model evaluation.
 The final XGBoost model achieved a validation log-loss of **0.6269**,
 improving upon a baseline logistic regression log-loss of **0.6448**.
 
+## Full Project Report
+
+For a detailed discussion of the exploratory analysis, feature engineering,
+model development, results, and visualizations, see the
+[full project writeup](project_writeup.pdf).
+
 ## Project Goals
 
 The primary goals of this project were to:
